@@ -1,0 +1,9 @@
+PeerOrgs:
+  - Name: Org2
+    Domain: org2.36sn.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+    Users:
+      Count: 1
+

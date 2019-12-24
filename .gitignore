@@ -1,0 +1,5 @@
+/channel-artifacts/*
+/logs/*
+/production/*
+/crypto-config/*
+.idea
