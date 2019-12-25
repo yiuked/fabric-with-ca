@@ -4,10 +4,10 @@ General:
     ListenPort: 7050
     TLS:
         Enabled: true
-        PrivateKey: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.key
-        Certificate: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.crt
+        PrivateKey: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.key
+        Certificate: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.crt
         RootCAs:
-          - /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/ca.crt
+          - /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/ca.crt
         ClientAuthRequired: false
         ClientRootCAs:
     Keepalive:
@@ -16,8 +16,8 @@ General:
         ServerTimeout: 20s
     Cluster:
         SendBufferSize: 10
-        ClientCertificate: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.key
-        ClientPrivateKey: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.crt
+        ClientCertificate: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.key
+        ClientPrivateKey: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/tls/server.crt
         ListenPort:
         ListenAddress:
         ServerCertificate:
@@ -25,8 +25,8 @@ General:
     # provisional or file
     GenesisMethod: provisional
     GenesisProfile: OneOrgsOrdererGenesis
-    GenesisFile: /home/vagrant/fabric/channel-artifacts/mygenesis.block
-    LocalMSPDir: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/msp
+    GenesisFile: /home/vagrant/fabric-with-ca/channel-artifacts/mygenesis.block
+    LocalMSPDir: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/msp
     LocalMSPID: OrdererMSP
     Profile:
         Enabled: false

@@ -19,12 +19,15 @@ function Stop(){
     set -x
     ps aux|grep 'bin/peer'|awk '{print $2}'|xargs kill -9
     ps aux|grep 'bin/orderer'|awk '{print $2}'|xargs kill -9
+    rm -rf ${APP_PATH}/logs/*
     set +x
     echo "===================== Killed orderer and peer ===================== "
 }
 
 function Start(){
     set -x
+    export FABRIC_LOGGING_SPEC=debug
+    mkdir -p ${APP_PATH}/logs
     ${APP_PATH}/bin/orderer start >>${APP_PATH}/logs/orderer.log 2>&1 &
     ${APP_PATH}/bin/peer node start >>${APP_PATH}/logs/peer.log 2>&1 &
     set +x

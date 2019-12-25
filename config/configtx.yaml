@@ -9,7 +9,7 @@ Organizations:
         ID: OrdererMSP
 
         # msp文件夹路径
-        MSPDir: /home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/msp
+        MSPDir: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/msp
         Policies:
             Readers:
                 Type: Signature
@@ -26,7 +26,7 @@ Organizations:
         Name: Org1MSP       
         ID: Org1MSP         
         # 组织msp文件名
-        MSPDir: /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/msp
+        MSPDir: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/msp
         Policies:
             Readers:
                 Type: Signature

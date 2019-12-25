@@ -3,3 +3,4 @@
 /production/*
 /crypto-config/*
 .idea
+/bin/*

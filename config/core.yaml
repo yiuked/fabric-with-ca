@@ -67,14 +67,14 @@ peer:
         enabled:  true
         clientAuthRequired: false
         cert:
-            file: /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/server.crt
+            file: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/server.crt
         key:
-            file: /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/server.key
+            file: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/server.key
         rootcert:
-            file: /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/ca.crt
+            file: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/ca.crt
         clientRootCAs:
             files:
-              - /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/ca.crt
+              - /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/tls/ca.crt
         clientKey:
             file:
         clientCert:
@@ -97,7 +97,7 @@ peer:
             Security:
             FileKeyStore:
                 KeyStore:
-    mspConfigPath: /home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/msp
+    mspConfigPath: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/msp
     localMspId: Org1MSP
     client:
         connTimeout: 3s

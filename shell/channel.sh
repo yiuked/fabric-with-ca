@@ -2,7 +2,7 @@
 
 source ./base.sh
 
-CHANNEL_NAME="zsjr"
+export FABRIC_LOGGING_SPEC=debug
 
 BLOCK_PATH=${APP_PATH}/channel-artifacts/${CHANNEL_NAME}.block
 CHANNEL_PATH=${APP_PATH}/channel-artifacts/channel.tx

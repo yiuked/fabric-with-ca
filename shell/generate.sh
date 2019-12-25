@@ -5,10 +5,10 @@ source ./base.sh
 ps aux|grep 'bin/peer'|awk '{print $2}'|xargs kill -9
 ps aux|grep 'bin/orderer'|awk '{print $2}'|xargs kill -9
 
-
+mkdir -p ${APP_PATH}/channel-artifacts
 
 set -x
-${APP_PATH}/bin/configtxgen -channelID ${CHANNEL_NAME} -profile OneOrgsOrdererGenesis -outputBlock ${APP_PATH}/channel-artifacts/mygenesis.block
+${APP_PATH}/bin/configtxgen -channelID ${CHANNEL_NAME} -profile OneOrgsOrdererGenesis -outputBlock ${APP_PATH}/channel-artifacts/${CHANNEL_NAME}.block
 res=$?
 set +x
 if [ $res -ne 0 ]; then
