@@ -25,7 +25,7 @@ General:
     # provisional or file
     GenesisMethod: provisional
     GenesisProfile: OneOrgsOrdererGenesis
-    GenesisFile: /home/vagrant/fabric-with-ca/channel-artifacts/mygenesis.block
+    GenesisFile: /home/vagrant/fabric-with-ca/channel-artifacts/zsjr.block
     LocalMSPDir: /home/vagrant/fabric-with-ca/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/msp
     LocalMSPID: OrdererMSP
     Profile:

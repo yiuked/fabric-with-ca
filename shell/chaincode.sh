@@ -1,17 +1,16 @@
 #!/bin/bash
 
-CHANNEL_NAME="zsjr"
-APP_PATH=/home/vagrant/fabric
+source ./base.sh
+
 EXAMPLE="example_v"
 ORDER="order_v"
 
-CAFILE=/home/vagrant/fabric/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/msp/tlscacerts/tlsca.36sn.com-cert.pem
+CAFILE=${APP_PATH}/crypto-config/ordererOrganizations/36sn.com/orderers/orderer.36sn.com/msp/tlscacerts/tlsca.36sn.com-cert.pem
 
 set -x
 cd ${APP_PATH}
-export CORE_PEER_MSPCONFIGPATH=/home/vagrant/fabric/crypto-config/peerOrganizations/org1.36sn.com/users/Admin@org1.36sn.com/msp
-export FABRIC_CFG_PATH=/home/vagrant/fabric/config
-export GOPATH=/home/vagrant/go
+export CORE_PEER_MSPCONFIGPATH=${APP_PATH}/crypto-config/peerOrganizations/org1.36sn.com/users/Admin@org1.36sn.com/msp
+export FABRIC_CFG_PATH=${APP_PATH}/config
 set +x
 
 function printHelp() {

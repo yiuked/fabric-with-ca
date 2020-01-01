@@ -20,6 +20,7 @@ function Stop(){
     ps aux|grep 'bin/peer'|awk '{print $2}'|xargs kill -9
     ps aux|grep 'bin/orderer'|awk '{print $2}'|xargs kill -9
     rm -rf ${APP_PATH}/logs/*
+    rm -rf /var/hyperledger/production/*
     set +x
     echo "===================== Killed orderer and peer ===================== "
 }
