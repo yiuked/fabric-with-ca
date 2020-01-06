@@ -97,7 +97,7 @@ peer:
             Security:
             FileKeyStore:
                 KeyStore:
-    mspConfigPath: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/peers/peer0.org1.36sn.com/msp
+    mspConfigPath: /home/vagrant/fabric-with-ca/crypto-config/peerOrganizations/org1.36sn.com/users/Admin@org1.36sn.com/msp
     localMspId: Org1MSP
     client:
         connTimeout: 3s

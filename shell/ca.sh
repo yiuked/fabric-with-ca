@@ -1,229 +1,363 @@
-#!/bin/bash
+#!/bin/bash +x
+#
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
 
-. ./base.sh
 
-CA_PID=0
-TLS_PID=0
-CA_DB='homestead:secret@tcp(localhost:3306)/fabric_ca?parseTime=true'
-TLS_DB='homestead:secret@tcp(localhost:3306)/fabric_tls?parseTime=true'
+#set -e
 
-function ClearProcess() {
-    pidarr=$(ps x | grep 'fabric-ca-server' | awk '{print $1}')
-    arr=($pidarr)
-    len=${#arr[*]}
-    if [ $len -gt 0 ];then
-        indx=0
-        while [ $indx -lt $len ]; do
-            kill -9 ${arr[$indx]}
-            echo "kill -9 "${arr[$indx]}
-            indx=$[$indx+1]
-        done
-    else
-        echo "该进程不存在"
-    fi
+# Organization info where each line is of the form:
+#    <type>:<orgName>:<rootCAPort>:<intermediateCAPort>:<numOrderersOrPeers>
+ORGS="\
+   orderer:36sn.com:9100:9101:1 \
+   peer:org1.36sn.com:9102:9103:2 \
+   peer:org2.36sn.com:9104:9105:2 \
+"
+
+# If true, uses both a root and intermediate CA
+INTERMEDIATE_CA=false
+
+# If true, recreate crypto if it already exists
+RECREATE=true
+
+# Path to fabric CA executables
+FCAHOME=$GOPATH/src/github.com/hyperledger/fabric-ca
+SERVER=$FCAHOME/bin/fabric-ca-server
+CLIENT=$FCAHOME/bin/fabric-ca-client
+
+# Crypto-config directory
+CDIR="../crypto-config"
+
+# More verbose logging for fabric-ca-server & fabric-ca-client
+DEBUG=-d
+
+# Main fabric CA crypto config function
+function main {
+   if [ -d $CDIR -a "$RECREATE" = false ]; then
+      echo "#################################################################"
+      echo "#######    Crypto material already exists   #####################"
+      echo "#################################################################"
+      exit 0
+   fi
+   echo "#################################################################"
+   echo "#######    Generating crypto material using Fabric CA  ##########"
+   echo "#################################################################"
+   echo "Checking executables ..."
+   mydir=`pwd`
+   checkExecutables
+   cd $mydir
+   if [ -d $CDIR ]; then
+      echo "Cleaning up ..."
+      stopAllCAs
+      rm -rf $CDIR
+   fi
+   echo "Setting up organizations ..."
+   setupOrgs
+   echo "Finishing ..."
+   stopAllCAs
+   echo "Complete"
 }
 
-function StartCA() {
-    SERVER_DIR=${FABRIC_CLIENT_PATH}/../server
-    rm -rf ${SERVER_DIR}/logs
-    mkdir -p ${SERVER_DIR}/logs
-    ${SERVER_DIR}/fabric-ca-server start -b admin:admin --db.datasource=${CA_DB} -p 7054 --cfg.affiliations.allowremove --cfg.identities.allowremove -H ${SERVER_DIR}/ca-home>${SERVER_DIR}/logs/ca-server.log &
-    CA_PID=$!
-    sleep 3
+# Check and build executables as needed
+function checkExecutables {
+   if [ ! -d $FCAHOME ]; then
+      fatal "Directory does not exist: $FCAHOME"
+   fi
+   if [ ! -x $SERVER ]; then
+      dir=`pwd`
+      cd $FCAHOME
+      make fabric-ca-server
+      if [ $? -ne 0 ]; then
+         fatal "Failed to build $SERVER"
+      fi
+   fi
+   if [ ! -x $CLIENT ]; then
+      dir=`pwd`
+      cd $FCAHOME
+      make fabric-ca-client
+      if [ $? -ne 0 ]; then
+         fatal "Failed to build $CLIENT"
+      fi
+   fi
 }
 
-function StartTLS() {
-    SERVER_DIR=${FABRIC_CLIENT_PATH}/../server
-    rm -rf ${SERVER_DIR}/logs
-    mkdir -p ${SERVER_DIR}/logs
-    ${SERVER_DIR}/fabric-ca-server start -b admin:admin --db.datasource=${TLS_DB} -p 7055 --cfg.affiliations.allowremove --cfg.identities.allowremove -H ${SERVER_DIR}/tls-home>${SERVER_DIR}/logs/tls-server.log &
-    TLS_PID=$!
-    sleep 3
+# Setup orderer and peer organizations
+function setupOrgs {
+   for ORG in $ORGS
+   do
+      setupOrg $ORG
+      stopAllCAs
+      sleep 5
+   done
 }
 
-function AdminCA() {
-    export FABRIC_CA_CLIENT_HOME=${FABRIC_CA_HOME}
-    rm -rf ${FABRIC_CLIENT_PATH}/fabric-ca-client-config.yaml ${FABRIC_CLIENT_PATH}/users/ca-admin
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://admin:admin@localhost:7054 -M ${FABRIC_CLIENT_PATH}/users/ca-admin/msp
+# Start an organization's root and intermediate CA servers
+#   setupOrg <type>:<orgName>:<rootCAPort>:<intermediateCAPort>:<numNodes>
+function setupOrg {
+   IFSBU=$IFS
+   IFS=: args=($1)
+   if [ ${#args[@]} -ne 5 ]; then
+      fatal "setupOrg: bad org spec: $1"
+   fi
+   type=${args[0]}
+   orgName=${args[1]}
+
+   debug "setup orgs has type= $type"
+   debug "setup orgs has orgName= $orgName"
+
+   orgDir=${CDIR}/${type}Organizations/${args[1]}
+   rootCAPort=${args[2]}
+   intermediateCAPort=${args[3]}
+   numNodes=${args[4]}
+   IFS=$IFSBU
+   # Start the root CA server
+   startCA $orgDir/ca/root $rootCAPort $orgName
+   # Enroll an admin user with the root CA
+   usersDir=$orgDir/users
+   adminHome=$usersDir/rootAdmin
+   enroll $adminHome http://admin:adminpw@localhost:$rootCAPort $orgName
+   if [ "$INTERMEDIATE_CA" == "true" ]; then
+      # Start the intermediate CA server
+      startCA $orgDir/ca/intermediate $intermediateCAPort $orgName http://admin:adminpw@localhost:$rootCAPort
+      # Enroll an admin user with the intermediate CA
+      adminHome=$usersDir/intermediateAdmin
+      intermediateCAURL=http://admin:adminpw@localhost:$intermediateCAPort
+      enroll $adminHome $intermediateCAURL $orgName
+   else
+      intermediateCAPort=$rootCAPort
+      intermediateCAURL=http://admin:adminpw@localhost:$rootCAPort
+   fi
+   # Register and enroll admin with the intermediate CA
+   adminUserHome=$usersDir/Admin@${orgName}
+   registerAndEnroll $adminHome $adminUserHome $intermediateCAPort $orgName nodeAdmin
+   # Register and enroll user1 with the intermediate CA
+   user1UserHome=$usersDir/User1@${orgName}
+   registerAndEnroll $adminHome $user1UserHome $intermediateCAPort $orgName
+   # Create nodes (orderers or peers)
+   nodeCount=0
+   while [ $nodeCount -lt $numNodes ]; do
+      if [ $numNodes -gt 1 ]; then
+         nodeDir=$orgDir/${type}s/${type}${nodeCount}.${orgName}
+      else
+         nodeDir=$orgDir/${type}s/${type}.${orgName}
+      fi
+      mkdir -p $nodeDir
+      # Get TLS crypto for this node
+      tlsEnroll $nodeDir $rootCAPort $orgName
+      # Register and enroll this node's identity
+      registerAndEnroll $adminHome $nodeDir $intermediateCAPort $orgName
+      normalizeMSP $nodeDir $orgName $adminUserHome
+      nodeCount=$(expr $nodeCount + 1)
+   done
+   # Get CA certs from intermediate CA
+   getcacerts $orgDir $intermediateCAURL
+   # Rename MSP files to names expected by end-to-end
+   normalizeMSP $orgDir $orgName $adminUserHome
+   normalizeMSP $adminHome $orgName
+   normalizeMSP $adminUserHome $orgName
+   normalizeMSP $user1UserHome $orgName
 }
 
-function AdminTLS() {
-    export FABRIC_CA_CLIENT_HOME=${FABRIC_TLS_HOME}
-    rm -rf ${FABRIC_CLIENT_PATH}/fabric-ca-client-config.yaml ${FABRIC_CLIENT_PATH}/users/tls-admin
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://admin:admin@localhost:7055 -M ${FABRIC_CLIENT_PATH}/users/tls-admin/msp
+# Start a root CA server:
+#    startCA <homeDirectory> <listeningPort> <orgName>
+# Start an intermediate CA server:
+#    startCA <homeDirectory> <listeningPort> <orgName> <parentURL>
+function startCA {
+   homeDir=$1; shift
+   port=$1; shift
+   orgName=$1; shift
+   mkdir -p $homeDir
+   export FABRIC_CA_SERVER_HOME=$homeDir
+   if [ $# -gt 0 ]; then
+      $SERVER start -p $port -b admin:adminpw -u $1 $DEBUG > $homeDir/server.log 2>&1&
+   else
+      $SERVER start -p $port -b admin:adminpw $DEBUG > $homeDir/server.log 2>&1&
+   fi
+   echo $! > $homeDir/server.pid
+   if [ $? -ne 0 ]; then
+      fatal "Failed to start server in $homeDir"
+   fi
+   debug "Starting CA server in $homeDir on port $port ..."
+   sleep 5
+   checkCA $homeDir $port
+   # Get the TLS crypto for this CA
+   tlsEnroll $homeDir $port $orgName
 }
 
-function StopCA() {
-  if [ ${CA_PID} -gt 0 ];then
-    kill -9 ${CA_PID}
-  fi
-
+# Make sure a CA server is running
+#    checkCA <homeDirectory>
+function checkCA {
+   pidFile=$1/server.pid
+   if [ ! -f $pidFile ]; then
+      fatal  "No PID file for CA server at $1"
+   fi
+   pid=`cat $pidFile`
+   if ps -p $pid > /dev/null
+   then
+      debug "CA server is started in $1 and listening on port $2"
+   else
+      fatal "CA server is not running at $1; see logs at $1/server.log"
+   fi
 }
 
-function StopTLS() {
-  if [ ${TLS_DB} -gt 0 ];then
-    kill -9 ${TLS_DB}
-  fi
+# Stop all CA servers
+function stopAllCAs {
+   for pidFile in `find $CDIR -name server.pid`
+   do
+      if [ ! -f $pidFile ]; then
+         fatal "\"$pidFile\" is not a file"
+      fi
+      pid=`cat $pidFile`
+      dir=$(dirname $pidFile)
+      debug "Stopping CA server in $dir with PID $pid ..."
+      if ps -p $pid > /dev/null
+      then
+         kill -9 $pid
+         wait $pid 2>/dev/null
+         rm -f $pidFile
+         debug "Stopped CA server in $dir with PID $pid"
+      fi
+   done
 }
 
-# $1 user
-# $2 password
-# $3 type
-# $4 affiliation
-# $5 role
-function RegisterCANode() {
-    export FABRIC_CA_CLIENT_HOME=${FABRIC_CA_HOME}
-    NodeDir=${APP_PATH}/crypto-config/$3Organizations/$4
-    
-    set -x
-    rm -rf $NodeDir
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client identity remove $1
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client identity remove Admin@$4
-    set +x
-    
-    # 1.register org
-    mkdir -p ${NodeDir}/ca ${NodeDir}/msp ${NodeDir}/msp/admincerts ${NodeDir}/msp/cacerts ${NodeDir}/msp/tlscacerts ${NodeDir}/$3s ${NodeDir}/tlsca ${NodeDir}/users
-    
-
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client register --id.type $3 --id.name $1 --id.secret $2 --id.affiliation $4 --id.attrs '"hf.Registrar.Roles=$5,CLIENT,ADMIN","hf.Revoker=true"'
-    res=$?
-    set +x
-    if [ $res -ne 0 ]; then
-        echo "Failed to register ..."
-        exit 1
-    fi
-    echo 
-    
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://$1:$2@localhost:7054 -M ${NodeDir}/$3s/$1/msp
-    set +x
-    echo 
-    
-    # rename
-    mv ${NodeDir}/$3s/$1/msp/cacerts/*.pem ${NodeDir}/$3s/$1/msp/cacerts/ca.$4-cert.pem
-
-    
-    # 1.2.create org msp and ca and tls
-    cp ${NodeDir}/$3s/$1/msp/cacerts/*.pem ${NodeDir}/msp/cacerts
-    cp ${NodeDir}/$3s/$1/msp/tlscacerts/*.pem ${NodeDir}/msp/tlscacerts
-    cp ${NodeDir}/$3s/$1/msp/cacerts/*.pem ${NodeDir}/ca
-    cp ${NodeDir}/$3s/$1/msp/tlscacerts/*.pem ${NodeDir}/tlsca
-
-
-
-    # 1.3.register peer admin
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client register --id.type $3 --id.name Admin@$4 --id.secret $2 --id.affiliation $4 --id.attrs '"hf.Registrar.Roles=ADMIN","hf.Revoker=true"'
-    res=$?
-    set +x
-    if [ $res -ne 0 ]; then
-        echo "Failed to register ..."
-        exit 1
-    fi
-    echo 
-
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://$1:$2@localhost:7054 -M ${NodeDir}/users/Admin@$4/msp
-    set +x
-    echo 
-    
-    # rename
-    mv ${NodeDir}/users/Admin@$4/msp/cacerts/*.pem ${NodeDir}/users/Admin@$4/msp/cacerts/ca.$4-cert.pem
-    
-    # 1.4.create orderer user
-    mkdir ${NodeDir}/users/Admin@$4/msp/admincerts
-    mkdir ${NodeDir}/$3s/$1/msp/admincerts
-    cp ${NodeDir}/users/Admin@$4/msp/signcerts/*.pem ${NodeDir}/users/Admin@$4/msp/admincerts
-    cp ${NodeDir}/users/Admin@$4/msp/admincerts/*.pem ${NodeDir}/msp/admincerts
-    cp ${NodeDir}/users/Admin@$4/msp/admincerts/*.pem ${NodeDir}/$3s/$1/msp/admincerts
-    
+# Register a new user
+#    register <user> <password> <registrarHomeDir>
+function register {
+   export FABRIC_CA_CLIENT_HOME=$3
+   mkdir -p $3
+   logFile=$3/register.log
+   $CLIENT register --id.name $1 --id.secret $2 --id.type user --id.affiliation org1 $DEBUG > $logFile 2>&1
+   if [ $? -ne 0 ]; then
+      fatal "Failed to register $1 with CA as $3; see $logFile"
+   fi
+   debug "Registered user $1 with intermediate CA as $3"
 }
 
-# $1 user
-# $2 password
-# $3 type
-# $4 affiliation
-# $5 role
-function RegisterTLSNode() {
-    export FABRIC_CA_CLIENT_HOME=${FABRIC_TLS_HOME}
-    
-    NodeDir=${APP_PATH}/crypto-config/$3Organizations/$4
-    
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client identity remove $1
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client identity remove Admin@$4
-    set +x
-    
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client register --id.type $3 --id.name $1 --id.secret $2 --id.affiliation $4 --id.attrs '"hf.Registrar.Roles=$5,CLIENT,ADMIN","hf.Revoker=true"'
-    res=$?
-    set +x
-    if [ $res -ne 0 ]; then
-        echo "Failed to register ..."
-        exit 1
-    fi
-    echo 
-    
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://$1:$2@localhost:7055 -M ${NodeDir}/$3s/$1/tls
-    set +x
-    echo 
-    
-    # rename
-    mv ${NodeDir}/$3s/$1/tls/cacerts/*.pem ${NodeDir}/$3s/$1/tls/cacerts/tlsca.$4-cert.pem
-    mkdir -p ${NodeDir}/$3s/$1/msp/tlscacerts
-    cp ${NodeDir}/$3s/$1/tls/cacerts/*.pem ${NodeDir}/$3s/$1/msp/tlscacerts/tlsca.$4-cert.pem
-
-    # 1.2.create peer tls
-    mkdir -p ${NodeDir}/$3s/$1/tls
-    mv ${NodeDir}/$3s/$1/tls/cacerts/*.pem ${NodeDir}/$3s/$1/tls/ca.crt
-    mv ${NodeDir}/$3s/$1/tls/keystore/*_sk ${NodeDir}/$3s/$1/tls/server.key
-    mv ${NodeDir}/$3s/$1/tls/signcerts/*.pem ${NodeDir}/$3s/$1/tls/server.crt
-    rm -rf ${NodeDir}/$3s/$1/tls/cacerts
-    rm -rf ${NodeDir}/$3s/$1/tls/keystore
-    rm -rf ${NodeDir}/$3s/$1/tls/signcerts
-    rm -rf ${NodeDir}/$3s/$1/tls/user
-    
-    # 1.3.register peer admin
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client register --id.type $3 --id.name Admin@$4 --id.secret $2 --id.affiliation $4 --id.attrs '"hf.Registrar.Roles=ADMIN","hf.Revoker=true"'
-    res=$?
-    set +x
-    if [ $res -ne 0 ]; then
-        echo "Failed to register ..."
-        exit 1
-    fi
-    echo 
-    
-    set -x
-    ${FABRIC_CLIENT_PATH}/fabric-ca-client enroll -u http://$1:$2@localhost:7055 -M ${NodeDir}/users/Admin@$4/tls
-    set +x
-    echo 
-    
-    # rename
-    mv ${NodeDir}/users/Admin@$4/tls/cacerts/*.pem ${NodeDir}/users/Admin@$4/tls/cacerts/tlsca.$4-cert.pem
-    mkdir -p ${NodeDir}/users/Admin@$4/msp/tlscacerts
-    cp ${NodeDir}/users/Admin@$4/tls/cacerts/*.pem ${NodeDir}/users/Admin@$4/msp/tlscacerts/tlsca.$4-cert.pem
-    
-    # 1.4.create orderer user tls
-    cp ${NodeDir}/users/Admin@$4/tls/cacerts/*.pem ${NodeDir}/users/Admin@$4/tls/ca.crt
-    cp ${NodeDir}/users/Admin@$4/tls/keystore/*_sk ${NodeDir}/users/Admin@$4/tls/server.key
-    cp ${NodeDir}/users/Admin@$4/tls/signcerts/*.pem ${NodeDir}/users/Admin@$4/tls/server.crt
-    rm -rf ${NodeDir}/users/Admin@$4/tls/cacerts
-    rm -rf ${NodeDir}/users/Admin@$4/tls/keystore
-    rm -rf ${NodeDir}/users/Admin@$4/tls/signcerts
-    rm -rf ${NodeDir}/users/Admin@$4/tls/user
+# Enroll an identity
+#    enroll <homeDir> <serverURL> <orgName> [<args>]
+function enroll {
+   homeDir=$1; shift
+   url=$1; shift
+   orgName=$1; shift
+   mkdir -p $homeDir
+   export FABRIC_CA_CLIENT_HOME=$homeDir
+   logFile=$homeDir/enroll.log
+   # Get an enrollment certificate
+   $CLIENT enroll -u $url $DEBUG $* > $logFile 2>&1
+   if [ $? -ne 0 ]; then
+      fatal "Failed to enroll $homeDir with CA at $url; see $logFile"
+   fi
+   # Get a TLS certificate
+   debug "Enrolled $homeDir with CA at $url"
 }
 
-ClearProcess
-StartCA
-StartTLS
-AdminCA
-AdminTLS
-RegisterCANode orderer.36sn.com abc123 orderer 36sn.com ORDERER
-RegisterTLSNode orderer.36sn.com abc123 orderer 36sn.com ORDERER
-RegisterCANode peer0.org1.36sn.com abc123 peer org1.36sn.com PEER
-RegisterTLSNode peer0.org1.36sn.com abc123 peer org1.36sn.com PEER
-StopCA
-StopTLS
+# Register and enroll a new user
+#    registerAndEnroll <registrarHomeDir> <registreeHomeDir> <serverPort> <orgName> [<userName>]
+function registerAndEnroll {
+   userName=$5
+   if [ "$userName" = "" ]; then
+      userName=$(basename $2)
+   fi
+   register $userName "secret" $1
+   enroll $2 http://${userName}:secret@localhost:$3 $4
+}
+
+# Enroll to get TLS crypto material
+#    tlsEnroll <homeDir> <serverPort> <orgName>
+function tlsEnroll {
+   homeDir=$1
+   port=$2
+   orgName=$3
+   host=$(basename $homeDir),$(basename $homeDir | cut -d'.' -f1)
+   tlsDir=$homeDir/tls
+   srcMSP=$tlsDir/msp
+   dstMSP=$homeDir/msp
+   enroll $tlsDir http://admin:adminpw@localhost:$port $orgName --csr.hosts $host --enrollment.profile tls
+   cp $srcMSP/signcerts/* $tlsDir/server.crt
+   cp $srcMSP/keystore/* $tlsDir/server.key
+   mkdir -p $dstMSP/keystore
+   cp $srcMSP/keystore/* $dstMSP/keystore
+   mkdir -p $dstMSP/tlscacerts
+   cp $srcMSP/tlscacerts/* $dstMSP/tlscacerts/tlsca.${orgName}-cert.pem
+   if [ -d $srcMSP/tlsintermediatecerts ]; then
+      cp $srcMSP/tlsintermediatecerts/* $tlsDir/ca.crt
+      mkdir -p $dstMSP/tlsintermediatecerts
+      cp $srcMSP/tlsintermediatecerts/* $dstMSP/tlsintermediatecerts
+   else
+      cp $srcMSP/tlscacerts/* $tlsDir/ca.crt
+   fi
+   rm -rf $srcMSP $homeDir/enroll.log $homeDir/fabric-ca-client-config.yaml
+}
+
+# Rename MSP files as is expected by the e2e example
+#    normalizeMSP <home> <orgName> <adminHome>
+function normalizeMSP {
+   userName=$(basename $1)
+   mspDir=$1/msp
+   orgName=$2
+   admincerts=$mspDir/admincerts
+   cacerts=$mspDir/cacerts
+   intcerts=$mspDir/intermediatecerts
+   signcerts=$mspDir/signcerts
+   cacertsfname=$cacerts/ca.${orgName}-cert.pem
+   if [ ! -f $cacertsfname ]; then
+      mv $cacerts/* $cacertsfname
+   fi
+   intcertsfname=$intcerts/ca.${orgName}-cert.pem
+   if [ ! -f $intcertsfname ]; then
+      if [ -d $intcerts ]; then
+         mv $intcerts/* $intcertsfname
+      fi
+   fi
+   signcertsfname=$signcerts/${userName}-cert.pem
+   if [ ! -f $signcertsfname ]; then
+      fname=`ls $signcerts 2> /dev/null`
+      if [ "$fname" = "" ]; then
+         mkdir -p $signcerts
+         cp $cacertsfname $signcertsfname
+      else
+         mv $signcerts/* $signcertsfname
+      fi
+   fi
+   # Copy the admin cert, which would need to be done out-of-band in the real world
+   mkdir -p $admincerts
+   if [ $# -gt 2 ]; then
+      src=`ls $3/msp/signcerts/*`
+      dst=$admincerts/Admin@${orgName}-cert.pem
+   else
+      src=`ls $signcerts/*`
+      dst=$admincerts
+   fi
+   if [ ! -f $src ]; then
+      fatal "admin certificate file not found at $src"
+   fi
+   cp $src $dst
+}
+# Get the CA certificates and place in MSP directory in <dir>
+#    getcacerts <dir> <serverURL>
+function getcacerts {
+   mkdir -p $1
+   export FABRIC_CA_CLIENT_HOME=$1
+   $CLIENT getcacert -u $2 > $1/getcacert.out 2>&1
+   if [ $? -ne 0 ]; then
+      fatal "Failed to get CA certificates $1 with CA at $2; see $logFile"
+   fi
+   mkdir $1/msp/tlscacerts
+   cp $1/msp/cacerts/* $1/msp/tlscacerts
+   debug "Loaded CA certificates into $1 from CA at $2"
+}
+
+# Print a fatal error message and exit
+function fatal {
+   echo "FATAL: $*"
+   exit 1
+}
+
+# Print a debug message
+function debug {
+   echo "    $*"
+}
+
+main
